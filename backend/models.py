@@ -96,7 +96,7 @@ class FocusSessionResponse(BaseModel):
 
 # ================= Settings =================
 class UserSettingsBase(BaseModel):
-    user_name: str = "Alex Morgan"
+    user_name: str = "User"
     work_start_time: str = "09:00"
     work_end_time: str = "18:00"
     buffer_minutes: int = 15
@@ -148,7 +148,7 @@ class DailyScheduleResponse(BaseModel):
     overload_minutes: int
     slots: List[ScheduleSlot]
     suggestions: List[str]
-    engine_used: str # "gemini" | "smart_heuristic"
+    engine_used: str # "gemini" | "smart_heuristic" | "deterministic"
 
 class ScheduleReorderSlot(BaseModel):
     task_id: str
@@ -165,8 +165,18 @@ class ChatMessageRequest(BaseModel):
 
 class ChatMessageResponse(BaseModel):
     reply: str
-    engine_used: str # "gemini" | "smart_heuristic"
+    engine_used: str # "gemini" | "smart_heuristic" | "deterministic_engine"
     suggested_actions: List[Dict[str, Any]] = []
+    action_executed: Optional[Dict[str, Any]] = None
+
+class ChatMessageRecord(BaseModel):
+    id: str
+    sender: str
+    text: str
+    timestamp: str
+    engine_used: Optional[str] = ""
+    suggested_actions: List[Dict[str, Any]] = []
+    created_at: str
 
 class GoalBreakdownRequest(BaseModel):
     goal_title: str

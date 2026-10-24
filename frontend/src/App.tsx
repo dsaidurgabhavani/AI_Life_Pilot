@@ -152,7 +152,7 @@ export function AppContent() {
     await refreshAllData();
   };
 
-  // Settings & Demo Reset
+  // Settings & Database Management
   const handleUpdateSettings = async (updates: Partial<UserSettings>) => {
     const updated = await api.updateSettings(updates);
     setSettings(updated);
@@ -170,7 +170,7 @@ export function AppContent() {
   };
 
   const overdueCount = tasks.filter((t) => t.is_overdue && t.status !== 'completed').length;
-  const engineUsed = todaySchedule?.engine_used || 'smart_heuristic';
+  const engineUsed = todaySchedule?.engine_used || 'deterministic';
 
   if (isLoading) {
     return (
@@ -178,8 +178,7 @@ export function AppContent() {
         <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-500/20">
           <RefreshCw className="w-5 h-5 animate-spin" />
         </div>
-        <div className="font-bold text-sm tracking-tight">AI LifePilot Initializing...</div>
-        <p className="text-xs text-slate-400">Loading your smart daily schedule & habits</p>
+        <p className="text-xs font-semibold text-slate-400">Loading AI LifePilot...</p>
       </div>
     );
   }
@@ -193,7 +192,7 @@ export function AppContent() {
         overdueCount={overdueCount}
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
-        userName={settings?.user_name || 'Alex Morgan'}
+        userName={settings?.user_name || 'User'}
       />
 
       {/* Main Content Area */}
@@ -283,7 +282,8 @@ export function AppContent() {
             <AssistantPage
               onNavigateTab={setCurrentTab}
               onOpenGoalBreakdown={() => setIsGoalBreakdownModalOpen(true)}
-              userName={settings?.user_name || 'Alex'}
+              userName={settings?.user_name || 'User'}
+              onRefreshData={refreshAllData}
             />
           )}
 

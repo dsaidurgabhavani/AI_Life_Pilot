@@ -10,7 +10,10 @@ import {
   CheckCircle2,
   Calendar,
   Cpu,
-  RefreshCw
+  RefreshCw,
+  Trash2,
+  RotateCcw,
+  AlertTriangle
 } from 'lucide-react';
 import { api } from '../api';
 import { ChatMessage } from '../types';
@@ -19,31 +22,50 @@ interface AssistantPageProps {
   onNavigateTab: (tab: any) => void;
   onOpenGoalBreakdown: () => void;
   userName: string;
+  onRefreshData?: () => Promise<void>;
 }
 
 export const AssistantPage: React.FC<AssistantPageProps> = ({
   onNavigateTab,
   onOpenGoalBreakdown,
-  userName
+  userName,
+  onRefreshData
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg-welcome',
-      sender: 'assistant',
-      text: `Hello ${userName}! I'm AI LifePilot, your intelligent productivity and daily planning copilot.\n\nI can help you prioritize conflicting deadlines, optimize your daily schedule, break down large milestones, or coach you through focused Pomodoro sprints.\n\nHow can I help simplify your day?`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      engine_used: 'smart_heuristic',
-      suggested_actions: [
-        { label: "View Today's Plan", route: 'planner' },
-        { label: 'Start Focus Sprint', route: 'focus' },
-        { label: 'Break Down Large Goal', action: 'open_breakdown_modal' }
-      ]
-    }
-  ]);
-
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [failedPrompt, setFailedPrompt] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const defaultWelcomeMessage: ChatMessage = {
+    id: 'msg-welcome',
+    sender: 'assistant',
+    text: `Hello ${userName || 'there'}! I'm your AI Productivity Copilot.\n\nI can help you:\n• **Plan your day with constraints:** e.g., *"Plan my day. I have classes from 9 AM to 1 PM and need two hours for Java practice."*\n• **Create and schedule tasks:** e.g., *"Create a task to finish my project report tomorrow"*\n• **Prioritize deadlines & decompose goals:** e.g., *"Break down my thesis into actionable subtasks"*\n• **Guide Pomodoro study/work sprints**\n\nHow can I help you take action today?`,
+    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    engine_used: 'real_action_engine',
+    suggested_actions: [
+      { label: "View Today's Plan", route: 'planner' },
+      { label: 'Start Focus Sprint', route: 'focus' },
+      { label: 'Decompose Large Goal', action: 'open_breakdown_modal' }
+    ]
+  };
+
+  // Load conversation history from database on mount
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const history = await api.getChatHistory();
+        if (history && history.length > 0) {
+          setMessages(history);
+        } else {
+          setMessages([defaultWelcomeMessage]);
+        }
+      } catch {
+        setMessages([defaultWelcomeMessage]);
+      }
+    };
+    loadHistory();
+  }, [userName]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -54,16 +76,17 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
   }, [messages, isLoading]);
 
   const quickPrompts = [
-    'How should I prioritize my tasks today?',
-    'I feel overwhelmed with work. What should I drop?',
-    'I only have 90 minutes of free time. What should I tackle?',
-    'Help me build momentum with the Pomodoro technique'
+    'Plan my day. I have classes from 9 AM to 1 PM and need two hours for Java practice.',
+    'Create a task to finish my project report tomorrow',
+    'What should I prioritize right now?',
+    'I feel overwhelmed with work. What should I tackle first?'
   ];
 
   const handleSend = async (messageText?: string) => {
     const textToSend = (messageText || input).trim();
     if (!textToSend || isLoading) return;
 
+    setFailedPrompt(null);
     const userMsg: ChatMessage = {
       id: `usr-${Date.now()}`,
       sender: 'user',
@@ -76,8 +99,8 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
     setIsLoading(true);
 
     try {
-      // Build conversation history format
-      const history = messages.slice(-6).map((m) => ({
+      // Build conversation history format for API
+      const history = messages.slice(-8).map((m) => ({
         role: m.sender === 'user' ? 'user' : 'model',
         content: m.text
       }));
@@ -94,13 +117,19 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
       };
 
       setMessages((prev) => [...prev, aiMsg]);
+
+      // If a real task was created or schedule updated, refresh application data instantly!
+      if (res.action_executed && onRefreshData) {
+        await onRefreshData();
+      }
     } catch (err: any) {
+      setFailedPrompt(textToSend);
       const errorMsg: ChatMessage = {
         id: `err-${Date.now()}`,
         sender: 'assistant',
-        text: `I encountered an issue connecting to the AI service: ${err.message || 'Please try again.'}`,
+        text: `⚠️ **Service Error**: ${err.message || 'Failed to communicate with AI Copilot.'}`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        engine_used: 'smart_heuristic'
+        engine_used: 'system_error'
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
@@ -108,9 +137,22 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
     }
   };
 
+  const handleClearChat = async () => {
+    if (window.confirm('Clear all conversation history?')) {
+      try {
+        await api.clearChatHistory();
+        setMessages([defaultWelcomeMessage]);
+      } catch (err: any) {
+        console.error('Failed to clear chat:', err);
+      }
+    }
+  };
+
   const handleActionClick = (action: { label: string; route?: string; action?: string }) => {
     if (action.action === 'open_breakdown_modal') {
       onOpenGoalBreakdown();
+    } else if (action.action === 'retry' && failedPrompt) {
+      handleSend(failedPrompt);
     } else if (action.route) {
       onNavigateTab(action.route);
     }
@@ -129,24 +171,35 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
               AI Productivity Copilot
             </h2>
             <span className="text-[10px] text-slate-400 block">
-              Grounded on your actual schedule, deadlines, and habits
+              Grounded on your actual database tasks, working hours, and deadlines
             </span>
           </div>
         </div>
 
-        <button
-          onClick={onOpenGoalBreakdown}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 hover:bg-indigo-100 border border-indigo-200/60 dark:border-indigo-800/40"
-        >
-          <Layers className="w-3.5 h-3.5 text-indigo-500" />
-          <span>Decompose Goal</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenGoalBreakdown}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 hover:bg-indigo-100 border border-indigo-200/60 dark:border-indigo-800/40"
+          >
+            <Layers className="w-3.5 h-3.5 text-indigo-500" />
+            <span className="hidden sm:inline">Decompose Goal</span>
+          </button>
+
+          <button
+            onClick={handleClearChat}
+            title="Clear Conversation History"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
         {messages.map((m) => {
           const isUser = m.sender === 'user';
+          const isError = m.engine_used === 'system_error';
 
           return (
             <div
@@ -160,6 +213,8 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
                 className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs shrink-0 ${
                   isUser
                     ? 'bg-blue-600 text-white'
+                    : isError
+                    ? 'bg-rose-100 text-rose-600 dark:bg-rose-950/60'
                     : 'bg-indigo-600/10 dark:bg-indigo-400/10 text-indigo-600 dark:text-indigo-400'
                 }`}
               >
@@ -172,10 +227,24 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
                   className={`p-4 rounded-2xl text-xs md:text-sm leading-relaxed whitespace-pre-wrap ${
                     isUser
                       ? 'bg-blue-600 text-white rounded-tr-xs'
+                      : isError
+                      ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-200 rounded-tl-xs border border-rose-200 dark:border-rose-900/40'
                       : 'bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 rounded-tl-xs border border-slate-200/60 dark:border-slate-700/50'
                   }`}
                 >
                   {m.text}
+
+                  {isError && failedPrompt && (
+                    <div className="mt-2 pt-2 border-t border-rose-200/60 dark:border-rose-900/40">
+                      <button
+                        onClick={() => handleSend(failedPrompt)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 shadow-2xs"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Retry</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Engine indicator & timestamp */}
@@ -189,7 +258,13 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
                     <span className="inline-flex items-center gap-1 font-medium text-slate-400">
                       •
                       <Cpu className="w-3 h-3 text-emerald-500" />
-                      {m.engine_used === 'gemini' ? 'Gemini 2.5 Flash' : 'Smart Heuristic Engine'}
+                      {m.engine_used === 'gemini'
+                        ? 'Gemini 1.5 Flash'
+                        : m.engine_used === 'real_action_engine'
+                        ? 'Real Action Engine'
+                        : m.engine_used === 'deterministic_engine'
+                        ? 'Deterministic Engine'
+                        : 'Notice'}
                     </span>
                   )}
                 </div>
@@ -221,7 +296,7 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
             </div>
             <div className="p-3.5 rounded-2xl rounded-tl-xs bg-slate-100 dark:bg-slate-800 text-xs text-slate-500 flex items-center gap-2">
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-500" />
-              <span>Analyzing schedule & formulating strategy...</span>
+              <span>Analyzing request & coordinating database operations...</span>
             </div>
           </div>
         )}
@@ -258,7 +333,7 @@ export const AssistantPage: React.FC<AssistantPageProps> = ({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask AI LifePilot to optimize schedule, break down goals, or tackle overload..."
+            placeholder="Type instructions (e.g. 'Plan my day. I have classes from 9 AM to 1 PM and need two hours for Java practice')..."
             className="flex-1 px-4 py-2.5 text-xs md:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           />
 

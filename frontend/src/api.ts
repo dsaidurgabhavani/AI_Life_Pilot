@@ -8,7 +8,8 @@ import {
   UserSettings,
   DailySchedule,
   GoalBreakdown,
-  AnalyticsOverview
+  AnalyticsOverview,
+  ChatMessage
 } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
@@ -164,7 +165,19 @@ export const api = {
     return handleResponse<FocusStats>(res);
   },
 
-  // Assistant
+  // Assistant & Conversation Persistence
+  getChatHistory: async (): Promise<ChatMessage[]> => {
+    const res = await fetch(`${API_BASE}/assistant/history`);
+    return handleResponse<ChatMessage[]>(res);
+  },
+
+  clearChatHistory: async (): Promise<{ message: string }> => {
+    const res = await fetch(`${API_BASE}/assistant/clear-history`, {
+      method: 'POST'
+    });
+    return handleResponse(res);
+  },
+
   sendChatMessage: async (message: string, conversationHistory: Array<{ role: string; content: string }>) => {
     const res = await fetch(`${API_BASE}/assistant/chat`, {
       method: 'POST',
@@ -174,7 +187,12 @@ export const api = {
         conversation_history: conversationHistory
       })
     });
-    return handleResponse<{ reply: string; engine_used: string; suggested_actions: Array<{ label: string; route?: string; action?: string }> }>(res);
+    return handleResponse<{
+      reply: string;
+      engine_used: string;
+      suggested_actions: Array<{ label: string; route?: string; action?: string }>;
+      action_executed?: any;
+    }>(res);
   },
 
   breakdownGoal: async (goalTitle: string, category: string = 'Study', targetDeadline?: string): Promise<GoalBreakdown> => {
@@ -220,7 +238,7 @@ export const api = {
     return handleResponse<UserSettings>(res);
   },
 
-  // Demo Data Reset / Clear
+  // Database Management
   resetDemoData: async (): Promise<{ message: string }> => {
     const res = await fetch(`${API_BASE}/demo/reset`, { method: 'POST' });
     return handleResponse(res);

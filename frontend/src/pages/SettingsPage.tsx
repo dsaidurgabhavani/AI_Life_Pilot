@@ -8,12 +8,11 @@ import {
   Moon,
   Bell,
   Key,
-  RotateCcw,
   Trash2,
   Check,
-  AlertCircle
+  AlertCircle,
+  ExternalLink
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
 import { UserSettings } from '../types';
 import { useTheme } from '../context/ThemeContext';
 
@@ -27,12 +26,11 @@ interface SettingsPageProps {
 export const SettingsPage: React.FC<SettingsPageProps> = ({
   settings,
   onUpdateSettings,
-  onResetDemoData,
   onClearUserData
 }) => {
   const { theme, setTheme } = useTheme();
 
-  const [userName, setUserName] = useState(settings?.user_name || 'Alex Morgan');
+  const [userName, setUserName] = useState(settings?.user_name || 'User');
   const [workStart, setWorkStart] = useState(settings?.work_start_time || '09:00');
   const [workEnd, setWorkEnd] = useState(settings?.work_end_time || '18:00');
   const [bufferMins, setBufferMins] = useState(settings?.buffer_minutes || 15);
@@ -52,7 +50,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       setIsSaving(true);
       setError(null);
       await onUpdateSettings({
-        user_name: userName.trim(),
+        user_name: userName.trim() || 'User',
         work_start_time: workStart,
         work_end_time: workEnd,
         buffer_minutes: Number(bufferMins),
@@ -71,22 +69,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     }
   };
 
-  const handleResetDemo = async () => {
-    if (window.confirm('Reset all tasks, habits, and focus logs to realistic demo data?')) {
-      await onResetDemoData();
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.6 }
-      });
-    }
-  };
-
   const handleClear = async () => {
-    if (window.confirm('Warning: This will clear all tasks, habits, and focus logs. Continue?')) {
+    if (window.confirm('Warning: This will clear all tasks, habits, focus logs, and chat messages. This action cannot be undone. Continue?')) {
       await onClearUserData();
     }
   };
+
+  const isGeminiConnected = Boolean(geminiApiKey && geminiApiKey.trim().length > 10);
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -96,7 +85,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           Settings & Preferences
         </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Personalize your daily schedule parameters, focus intervals, appearance, and AI engine settings.
+          Personalize your working schedule, focus intervals, appearance, and AI provider credentials.
         </p>
       </div>
 
@@ -104,7 +93,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         {saveSuccess && (
           <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
             <Check className="w-4 h-4 shrink-0" />
-            <span>Settings successfully saved and applied!</span>
+            <span>Settings successfully saved to database!</span>
           </div>
         )}
 
@@ -130,16 +119,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               type="text"
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
-              className="w-full max-w-md px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              placeholder="Your Name or Profile"
+              className="w-full sm:w-80 px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
         </div>
 
-        {/* Schedule & Working Hours */}
+        {/* Daily Schedule Parameters */}
         <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
           <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
             <Clock className="w-4 h-4 text-indigo-500" />
-            <span>Daily Schedule Hours & Buffers</span>
+            <span>Daily Schedule & Buffer Window</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -169,12 +159,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Buffer Between Tasks (Minutes)
+                Buffer Interval (Mins)
               </label>
               <input
                 type="number"
-                min="0"
-                max="60"
+                min={0}
+                max={60}
+                step={5}
                 value={bufferMins}
                 onChange={(e) => setBufferMins(Number(e.target.value))}
                 className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -183,22 +174,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </div>
 
-        {/* Pomodoro Timer Configuration */}
+        {/* Pomodoro Durations */}
         <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
           <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
             <Sparkles className="w-4 h-4 text-emerald-500" />
-            <span>Focus & Pomodoro Timer Durations</span>
+            <span>Pomodoro Focus Intervals</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                Focus Sprint (Minutes)
+                Work Sprint (Minutes)
               </label>
               <input
                 type="number"
-                min="5"
-                max="120"
+                min={10}
+                max={90}
                 value={pomodoroWork}
                 onChange={(e) => setPomodoroWork(Number(e.target.value))}
                 className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -211,8 +202,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </label>
               <input
                 type="number"
-                min="1"
-                max="30"
+                min={1}
+                max={30}
                 value={pomodoroBreak}
                 onChange={(e) => setPomodoroBreak(Number(e.target.value))}
                 className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -225,8 +216,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </label>
               <input
                 type="number"
-                min="5"
-                max="60"
+                min={5}
+                max={60}
                 value={pomodoroLongBreak}
                 onChange={(e) => setPomodoroLongBreak(Number(e.target.value))}
                 className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
@@ -302,19 +293,41 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               <Key className="w-4 h-4 text-purple-500" />
               <span>AI Provider Configuration</span>
             </div>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
-              Reliable Fallback Enabled
+            <span
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                isGeminiConnected
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
+                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isGeminiConnected ? 'bg-emerald-500' : 'bg-slate-400'
+                }`}
+              />
+              {isGeminiConnected ? 'Gemini 1.5 Flash Connected' : 'Deterministic Mode (Key Optional)'}
             </span>
           </div>
 
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            AI LifePilot features a built-in <strong>Smart Heuristic Engine</strong> that runs locally with zero external dependencies. You can optionally supply your Google Gemini API key below to unlock generative LLM capabilities.
+            AI LifePilot features a built-in deterministic action engine that creates tasks, schedules commitments, and manages deadlines completely offline. To enable live natural-language generative reasoning and coaching, supply your Google Gemini API key below.
           </p>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Google Gemini API Key (Optional)
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Google Gemini API Key
+              </label>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+              >
+                <span>Get a free key from Google AI Studio</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
             <input
               type="password"
               value={geminiApiKey}
@@ -337,32 +350,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         </div>
       </form>
 
-      {/* Demo Data Management */}
+      {/* Database & Workspace Management */}
       <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
         <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-          Demo Data & Database Management
+          Workspace Data Management
         </h3>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Reset demo data to preview AI LifePilot with rich sample tasks, active habit streaks, and focus sessions, or clear all data to start with a clean slate.
+          Clear all tasks, habit records, focus sessions, and conversation history to start with a fresh workspace.
         </p>
 
         <div className="flex flex-wrap items-center gap-3 pt-2">
           <button
             type="button"
-            onClick={handleResetDemo}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 hover:bg-indigo-100 border border-indigo-200/60 dark:border-indigo-800/40"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Realistic Demo Data</span>
-          </button>
-
-          <button
-            type="button"
             onClick={handleClear}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 hover:bg-rose-100 border border-rose-200/60 dark:border-rose-900/40"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 hover:bg-rose-100 border border-rose-200/60 dark:border-rose-900/40 transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>Clear All User Data</span>
+            <span>Clear All Workspace Data</span>
           </button>
         </div>
       </div>

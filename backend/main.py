@@ -6,9 +6,27 @@ from fastapi.responses import FileResponse
 from database import init_db
 from routers import tasks, planner, habits, focus, assistant, analytics, settings, demo
 
+def load_env_file(filepath: str):
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k, v = k.strip(), v.strip().strip("'\"")
+                        if k not in os.environ:
+                            os.environ[k] = v
+        except Exception as e:
+            print(f"Warning: could not read {filepath}: {e}")
+
+# Load environment variables from root or backend directory if present
+load_env_file(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+load_env_file(os.path.join(os.path.dirname(__file__), ".env"))
+
 app = FastAPI(
     title="AI LifePilot API",
-    description="Intelligent Daily Life Assistant API for AI Website Build Sprint",
+    description="Intelligent Daily Life Assistant API - Real-World Production Platform",
     version="1.0.0"
 )
 
@@ -21,7 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Startup event to ensure database is created and seeded
+# Startup event to ensure database is created and initialized
 @app.on_event("startup")
 def startup_event():
     init_db()
@@ -38,7 +56,11 @@ app.include_router(demo.router)
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "service": "AI LifePilot Backend"}
+    return {
+        "status": "ok",
+        "service": "AI LifePilot Backend",
+        "ai_configured": bool(os.environ.get("GEMINI_API_KEY", "").strip())
+    }
 
 # Serve frontend build if dist directory exists
 DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
@@ -49,7 +71,6 @@ if os.path.exists(DIST_DIR):
 
     @app.get("/{full_path:path}")
     def serve_spa(full_path: str):
-        # Don't intercept API routes or docs
         if full_path.startswith("api") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
             return {"error": "Endpoint not found"}
         file_path = os.path.join(DIST_DIR, full_path)

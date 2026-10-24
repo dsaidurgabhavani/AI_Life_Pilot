@@ -2,10 +2,16 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 from fastapi import APIRouter
-from database import get_connection
+from database import (
+    get_connection,
+    get_chat_history,
+    add_chat_message,
+    clear_chat_history
+)
 from models import (
     ChatMessageRequest,
     ChatMessageResponse,
+    ChatMessageRecord,
     GoalBreakdownRequest,
     GoalBreakdownResponse,
     SubtaskItem
@@ -15,8 +21,31 @@ from routers.tasks import enrich_task_dict
 
 router = APIRouter(prefix="/api/assistant", tags=["Intelligent AI Assistant"])
 
+@router.get("/history", response_model=List[ChatMessageRecord])
+def get_history(limit: int = 50):
+    """Returns stored conversation history."""
+    history = get_chat_history(limit=limit)
+    return [ChatMessageRecord(**m) for m in history]
+
+@router.post("/clear-history")
+def clear_history():
+    """Clears conversation history from database."""
+    clear_chat_history()
+    return {"message": "Conversation history cleared successfully"}
+
 @router.post("/chat", response_model=ChatMessageResponse)
 def handle_chat(req: ChatMessageRequest):
+    now_time = datetime.now().strftime("%H:%M")
+    user_msg_id = f"usr-{uuid.uuid4().hex[:8]}"
+
+    # Persist the incoming user message
+    add_chat_message(
+        msg_id=user_msg_id,
+        sender="user",
+        text=req.message,
+        timestamp=now_time
+    )
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -44,14 +73,35 @@ def handle_chat(req: ChatMessageRequest):
         "overdue_count": overdue_count,
         "pending_count": len(pending_tasks),
         "focus_today_minutes": focus_today,
-        "user_name": settings.get("user_name", "Alex")
+        "user_name": settings.get("user_name", "User"),
+        "settings": settings
     }
+
+    # Fetch last conversation turns from DB if none provided
+    history = req.conversation_history
+    if not history:
+        db_history = get_chat_history(limit=8)
+        history = [
+            {"role": "user" if m["sender"] == "user" else "model", "content": m["text"]}
+            for m in db_history
+        ]
 
     result = chat_with_assistant(
         message=req.message,
-        conversation_history=req.conversation_history or [],
+        conversation_history=history,
         context=context,
         gemini_key=settings.get("gemini_api_key", "")
+    )
+
+    # Persist the assistant reply
+    ai_msg_id = f"ai-{uuid.uuid4().hex[:8]}"
+    add_chat_message(
+        msg_id=ai_msg_id,
+        sender="assistant",
+        text=result["reply"],
+        timestamp=datetime.now().strftime("%H:%M"),
+        engine_used=result.get("engine_used", ""),
+        suggested_actions=result.get("suggested_actions", [])
     )
 
     return ChatMessageResponse(**result)
@@ -94,7 +144,10 @@ def import_subtasks_to_tasks(payload: Dict[str, Any]):
         target_deadline = (now + timedelta(days=day_offset, hours=4)).strftime("%Y-%m-%dT18:00")
 
         cursor.execute("""
-        INSERT INTO tasks (id, title, description, category, priority, status, estimated_duration, deadline, created_at, order_index)
+        INSERT INTO tasks (
+            id, title, description, category, priority, status,
+            estimated_duration, deadline, created_at, order_index
+        )
         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
         """, (
             t_id,
