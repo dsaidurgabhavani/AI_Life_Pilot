@@ -8,7 +8,8 @@ import {
   FocusStats,
   UserSettings,
   AnalyticsOverview,
-  TaskCreateInput
+  TaskCreateInput,
+  Reminder
 } from './types';
 import { Sidebar, NavItemKey } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -37,6 +38,7 @@ export function AppContent() {
   const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
 
   // Modals & Drawers state
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
@@ -45,7 +47,7 @@ export function AppContent() {
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // Active focus sprint task (when user clicks "Focus Now" from any view)
+  // Active focus sprint task
   const [activeFocusTask, setActiveFocusTask] = useState<Task | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -61,7 +63,8 @@ export function AppContent() {
         focusStatsData,
         focusSessionsData,
         settingsData,
-        analyticsData
+        analyticsData,
+        remindersData
       ] = await Promise.all([
         api.getTasks(),
         api.getNextRecommendedTask(),
@@ -70,7 +73,8 @@ export function AppContent() {
         api.getFocusStats(),
         api.getFocusSessions(),
         api.getSettings(),
-        api.getAnalyticsOverview()
+        api.getAnalyticsOverview(),
+        api.getReminders()
       ]);
 
       setTasks(tasksData);
@@ -81,6 +85,7 @@ export function AppContent() {
       setFocusSessions(focusSessionsData);
       setSettings(settingsData);
       setAnalytics(analyticsData);
+      setReminders(remindersData);
     } catch (err) {
       console.error('Failed to load application data:', err);
     } finally {
@@ -90,6 +95,31 @@ export function AppContent() {
 
   useEffect(() => {
     refreshAllData();
+  }, [refreshAllData]);
+
+  // Real-time reminder poller (every 5 seconds)
+  useEffect(() => {
+    const pollReminders = setInterval(async () => {
+      try {
+        const res = await api.getDueReminders();
+        if (res.due_count > 0) {
+          for (const alert of res.alerts) {
+            // Trigger browser notification if allowed
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              new Notification(`⏰ Reminder: ${alert.title}`, {
+                body: `Scheduled alert: ${alert.title}. Tap to view in AI LifePilot.`
+              });
+            }
+          }
+          // Refresh data so reminders status reflects sent
+          await refreshAllData();
+        }
+      } catch {
+        // silent catch
+      }
+    }, 5000);
+
+    return () => clearInterval(pollReminders);
   }, [refreshAllData]);
 
   // Task Actions
@@ -110,6 +140,11 @@ export function AppContent() {
 
   const handleDeleteTask = async (id: string) => {
     await api.deleteTask(id);
+    await refreshAllData();
+  };
+
+  const handleDeleteReminder = async (id: string) => {
+    await api.deleteReminder(id);
     await refreshAllData();
   };
 
@@ -334,8 +369,10 @@ export function AppContent() {
         isOpen={isNotificationDrawerOpen}
         onClose={() => setIsNotificationDrawerOpen(false)}
         tasks={tasks}
+        reminders={reminders}
         onToggleTask={handleToggleTask}
         onStartFocus={handleStartFocusOnTask}
+        onDeleteReminder={handleDeleteReminder}
       />
     </div>
   );

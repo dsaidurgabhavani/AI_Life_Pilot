@@ -3,6 +3,7 @@ import os
 import json
 import uuid
 from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "lifepilot.db")
 
@@ -85,12 +86,22 @@ def init_db():
         pomodoro_work_duration INTEGER DEFAULT 25,
         pomodoro_break_duration INTEGER DEFAULT 5,
         pomodoro_long_break_duration INTEGER DEFAULT 15,
-        theme TEXT DEFAULT 'system',
+        theme TEXT DEFAULT 'light',
         notifications_enabled INTEGER DEFAULT 1,
         ai_provider TEXT DEFAULT 'auto',
-        gemini_api_key TEXT DEFAULT ''
+        gemini_api_key TEXT DEFAULT '',
+        timezone TEXT DEFAULT 'auto'
     )
     """)
+
+    # Add timezone column if missing in existing database
+    cursor.execute("PRAGMA table_info(user_settings)")
+    settings_cols = [r["name"] for r in cursor.fetchall()]
+    if "timezone" not in settings_cols:
+        try:
+            cursor.execute("ALTER TABLE user_settings ADD COLUMN timezone TEXT DEFAULT 'auto'")
+        except Exception:
+            pass
 
     # Chat Messages table (Conversation Persistence)
     cursor.execute("""
@@ -105,9 +116,35 @@ def init_db():
     )
     """)
 
+    # Reminders table (Real-time scheduling mechanism)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS reminders (
+        id TEXT PRIMARY KEY,
+        task_id TEXT,
+        title TEXT NOT NULL,
+        remind_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        channel TEXT NOT NULL DEFAULT 'in_app',
+        created_at TEXT NOT NULL,
+        sent_at TEXT,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+    )
+    """)
+
+    # User Documents table (Document upload & summarization storage)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_documents (
+        id TEXT PRIMARY KEY,
+        filename TEXT NOT NULL,
+        content TEXT NOT NULL,
+        summary TEXT DEFAULT '',
+        created_at TEXT NOT NULL
+    )
+    """)
+
     conn.commit()
 
-    # Migration / Cleanup: Remove 'Alex Morgan' references from existing DB
+    # Migration / Cleanup: Remove 'Alex Morgan' references completely from existing DB
     cursor.execute("""
     UPDATE user_settings 
     SET user_name = 'User' 
@@ -121,16 +158,17 @@ def init_db():
         INSERT INTO user_settings (
             id, user_name, work_start_time, work_end_time, buffer_minutes,
             pomodoro_work_duration, pomodoro_break_duration, pomodoro_long_break_duration,
-            theme, notifications_enabled, ai_provider, gemini_api_key
+            theme, notifications_enabled, ai_provider, gemini_api_key, timezone
         )
-        VALUES (1, 'User', '09:00', '18:00', 15, 25, 5, 15, 'light', 1, 'auto', '')
+        VALUES (1, 'User', '09:00', '18:00', 15, 25, 5, 15, 'light', 1, 'auto', '', 'auto')
         """)
 
     conn.commit()
     conn.close()
 
-# Chat message persistence helpers
-def get_chat_history(limit: int = 50):
+# ================= Chat Message Persistence =================
+
+def get_chat_history(limit: int = 50) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -187,6 +225,112 @@ def clear_chat_history():
     conn.commit()
     conn.close()
 
+# ================= Reminders Persistence =================
+
+def create_reminder_record(
+    title: str,
+    remind_at: str,
+    task_id: Optional[str] = None,
+    channel: str = "in_app"
+) -> Dict[str, Any]:
+    rem_id = f"rem-{uuid.uuid4().hex[:8]}"
+    now_iso = datetime.now().isoformat()
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO reminders (id, task_id, title, remind_at, status, channel, created_at, sent_at)
+    VALUES (?, ?, ?, ?, 'pending', ?, ?, NULL)
+    """, (rem_id, task_id, title.strip(), remind_at, channel, now_iso))
+    conn.commit()
+
+    cursor.execute("SELECT * FROM reminders WHERE id = ?", (rem_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row)
+
+def get_reminders_list(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    if status and status.lower() != "all":
+        cursor.execute("""
+        SELECT * FROM reminders 
+        WHERE status = ? 
+        ORDER BY remind_at ASC 
+        LIMIT ?
+        """, (status, limit))
+    else:
+        cursor.execute("""
+        SELECT * FROM reminders 
+        ORDER BY remind_at ASC 
+        LIMIT ?
+        """, (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_due_reminders(now_iso: Optional[str] = None) -> List[Dict[str, Any]]:
+    current_time = now_iso or datetime.now().isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT * FROM reminders 
+    WHERE status = 'pending' AND remind_at <= ?
+    ORDER BY remind_at ASC
+    """, (current_time,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def mark_reminder_status(reminder_id: str, status: str, sent_at: Optional[str] = None) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    UPDATE reminders 
+    SET status = ?, sent_at = COALESCE(?, sent_at) 
+    WHERE id = ?
+    """, (status, sent_at, reminder_id))
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+def delete_reminder_record(reminder_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+# ================= Documents Persistence =================
+
+def save_user_document(filename: str, content: str, summary: str = "") -> Dict[str, Any]:
+    doc_id = f"doc-{uuid.uuid4().hex[:8]}"
+    now_iso = datetime.now().isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO user_documents (id, filename, content, summary, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    """, (doc_id, filename, content, summary, now_iso))
+    conn.commit()
+    cursor.execute("SELECT * FROM user_documents WHERE id = ?", (doc_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row)
+
+def get_user_documents(limit: int = 10) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, filename, summary, created_at, LENGTH(content) as content_length FROM user_documents ORDER BY created_at DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+# ================= Global Reset / Clear =================
+
 def clear_all_data():
     conn = get_connection()
     cursor = conn.cursor()
@@ -195,5 +339,7 @@ def clear_all_data():
     cursor.execute("DELETE FROM tasks")
     cursor.execute("DELETE FROM focus_sessions")
     cursor.execute("DELETE FROM chat_messages")
+    cursor.execute("DELETE FROM reminders")
+    cursor.execute("DELETE FROM user_documents")
     conn.commit()
     conn.close()

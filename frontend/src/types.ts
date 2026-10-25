@@ -87,6 +87,24 @@ export interface FocusStats {
   total_sessions: number;
 }
 
+export interface Reminder {
+  id: string;
+  task_id?: string | null;
+  title: string;
+  remind_at: string;
+  status: 'pending' | 'sent' | 'failed' | 'cancelled';
+  channel: string;
+  created_at: string;
+  sent_at?: string | null;
+}
+
+export interface ReminderCreateInput {
+  title: string;
+  remind_at: string;
+  task_id?: string | null;
+  channel?: string;
+}
+
 export interface UserSettings {
   user_name: string;
   work_start_time: string;
@@ -99,6 +117,7 @@ export interface UserSettings {
   notifications_enabled: boolean;
   ai_provider: string;
   gemini_api_key?: string;
+  timezone?: string;
 }
 
 export interface ScheduleSlot {
@@ -125,7 +144,7 @@ export interface DailySchedule {
   overload_minutes: number;
   slots: ScheduleSlot[];
   suggestions: string[];
-  engine_used: 'gemini' | 'smart_heuristic';
+  engine_used: string;
 }
 
 export interface SubtaskItem {
@@ -144,6 +163,14 @@ export interface GoalBreakdown {
   explanation: string;
 }
 
+export interface ToolExecution {
+  tool_name: string;
+  arguments: Record<string, any>;
+  result?: any;
+  success: boolean;
+  message: string;
+}
+
 export interface ChatMessage {
   id: string;
   sender: 'user' | 'assistant';
@@ -151,6 +178,8 @@ export interface ChatMessage {
   timestamp: string;
   engine_used?: string;
   suggested_actions?: Array<{ label: string; route?: string; action?: string }>;
+  tool_executions?: ToolExecution[];
+  action_executed?: any;
 }
 
 export interface CategoryBreakdown {

@@ -37,6 +37,29 @@ class TaskResponse(TaskBase):
     time_remaining_formatted: str = ""
     urgency_level: str = "normal" # overdue, due_soon (<3 hrs), today, upcoming
 
+# ================= Reminders =================
+class ReminderCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    remind_at: str = Field(..., description="ISO datetime string for when to alert")
+    task_id: Optional[str] = None
+    channel: str = Field("in_app", description="in_app, browser, email")
+
+class ReminderUpdate(BaseModel):
+    title: Optional[str] = None
+    remind_at: Optional[str] = None
+    status: Optional[str] = None # pending, sent, failed, cancelled
+    channel: Optional[str] = None
+
+class ReminderResponse(BaseModel):
+    id: str
+    task_id: Optional[str] = None
+    title: str
+    remind_at: str
+    status: str
+    channel: str
+    created_at: str
+    sent_at: Optional[str] = None
+
 # ================= Habits =================
 class HabitBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
@@ -107,6 +130,7 @@ class UserSettingsBase(BaseModel):
     notifications_enabled: bool = True
     ai_provider: str = "auto"
     gemini_api_key: Optional[str] = ""
+    timezone: str = "auto"
 
 class UserSettingsResponse(UserSettingsBase):
     pass
@@ -123,6 +147,7 @@ class UserSettingsUpdate(BaseModel):
     notifications_enabled: Optional[bool] = None
     ai_provider: Optional[str] = None
     gemini_api_key: Optional[str] = None
+    timezone: Optional[str] = None
 
 # ================= Planner / Timeline =================
 class ScheduleSlot(BaseModel):
@@ -158,16 +183,75 @@ class ScheduleReorderSlot(BaseModel):
 class ScheduleReorderRequest(BaseModel):
     slots: List[ScheduleReorderSlot]
 
-# ================= AI Assistant =================
+# ================= External Real-Time Integrations =================
+class WeatherResponse(BaseModel):
+    success: bool
+    city: Optional[str] = None
+    region: Optional[str] = None
+    country: Optional[str] = None
+    coordinates: Optional[str] = None
+    timezone: Optional[str] = None
+    observation_time: Optional[str] = None
+    temperature_c: Optional[float] = None
+    temperature_f: Optional[float] = None
+    feels_like_c: Optional[float] = None
+    humidity_percent: Optional[int] = None
+    precipitation_mm: Optional[float] = None
+    wind_speed_kmh: Optional[float] = None
+    condition: Optional[str] = None
+    source: Optional[str] = "Open-Meteo Live API"
+    timestamp: Optional[str] = None
+    error: Optional[str] = None
+
+class WebSearchItem(BaseModel):
+    title: str
+    snippet: str
+    url: str
+
+class WebSearchResponse(BaseModel):
+    success: bool
+    query: str
+    result_count: int
+    results: List[WebSearchItem]
+    searched_at: Optional[str] = None
+    error: Optional[str] = None
+
+class DocumentUploadResponse(BaseModel):
+    id: str
+    filename: str
+    char_count: int
+    word_count: int
+    summary: str
+    created_at: str
+
+class DocumentSummaryRequest(BaseModel):
+    text: str = Field(..., min_length=10)
+    title: Optional[str] = "Uploaded Document"
+
+class DocumentSummaryResponse(BaseModel):
+    title: str
+    summary: str
+    key_points: List[str]
+    suggested_tasks: List[str]
+
+# ================= AI Assistant & Tool Execution =================
+class ToolExecutionRecord(BaseModel):
+    tool_name: str
+    arguments: Dict[str, Any] = {}
+    result: Optional[Any] = None
+    success: bool = True
+    message: str = ""
+
 class ChatMessageRequest(BaseModel):
     message: str
     conversation_history: Optional[List[Dict[str, str]]] = []
 
 class ChatMessageResponse(BaseModel):
     reply: str
-    engine_used: str # "gemini" | "smart_heuristic" | "deterministic_engine"
+    engine_used: str # "gemini" | "real_action_engine" | "deterministic_engine" | "system_error"
     suggested_actions: List[Dict[str, Any]] = []
     action_executed: Optional[Dict[str, Any]] = None
+    tool_executions: List[ToolExecutionRecord] = []
 
 class ChatMessageRecord(BaseModel):
     id: str

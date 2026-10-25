@@ -9,7 +9,10 @@ import {
   DailySchedule,
   GoalBreakdown,
   AnalyticsOverview,
-  ChatMessage
+  ChatMessage,
+  Reminder,
+  ReminderCreateInput,
+  ToolExecution
 } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
@@ -165,6 +168,66 @@ export const api = {
     return handleResponse<FocusStats>(res);
   },
 
+  // Reminders
+  getReminders: async (status?: string): Promise<Reminder[]> => {
+    const url = status ? `${API_BASE}/reminders?status=${status}` : `${API_BASE}/reminders`;
+    const res = await fetch(url);
+    return handleResponse<Reminder[]>(res);
+  },
+
+  createReminder: async (data: ReminderCreateInput): Promise<Reminder> => {
+    const res = await fetch(`${API_BASE}/reminders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return handleResponse<Reminder>(res);
+  },
+
+  updateReminder: async (id: string, updates: Partial<Reminder>): Promise<Reminder> => {
+    const res = await fetch(`${API_BASE}/reminders/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    return handleResponse<Reminder>(res);
+  },
+
+  deleteReminder: async (id: string): Promise<{ message: string; id: string }> => {
+    const res = await fetch(`${API_BASE}/reminders/${id}`, {
+      method: 'DELETE'
+    });
+    return handleResponse(res);
+  },
+
+  getDueReminders: async (): Promise<{ due_count: number; alerts: any[] }> => {
+    const res = await fetch(`${API_BASE}/reminders/due`);
+    return handleResponse<{ due_count: number; alerts: any[] }>(res);
+  },
+
+  // External Real-Time Integrations
+  getWeather: async (location: string = 'Vijayawada') => {
+    const res = await fetch(`${API_BASE}/external/weather?location=${encodeURIComponent(location)}`);
+    return handleResponse<any>(res);
+  },
+
+  searchWeb: async (query: string, limit: number = 5) => {
+    const res = await fetch(`${API_BASE}/external/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+    return handleResponse<any>(res);
+  },
+
+  uploadDocument: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/external/upload-doc`, {
+      method: 'POST',
+      body: formData
+    });
+    return handleResponse<any>(res);
+  },
+
+  getCalendarDownloadUrl: () => `${API_BASE}/external/calendar.ics`,
+
   // Assistant & Conversation Persistence
   getChatHistory: async (): Promise<ChatMessage[]> => {
     const res = await fetch(`${API_BASE}/assistant/history`);
@@ -192,6 +255,7 @@ export const api = {
       engine_used: string;
       suggested_actions: Array<{ label: string; route?: string; action?: string }>;
       action_executed?: any;
+      tool_executions?: ToolExecution[];
     }>(res);
   },
 

@@ -1,28 +1,65 @@
-import React from 'react';
-import { X, AlertTriangle, Clock, CheckCircle2, ArrowRight } from 'lucide-react';
-import { Task } from '../types';
+import React, { useState } from 'react';
+import {
+  X,
+  AlertTriangle,
+  Clock,
+  CheckCircle2,
+  Bell,
+  Trash2,
+  Calendar,
+  Check,
+  ShieldAlert
+} from 'lucide-react';
+import { Task, Reminder } from '../types';
 
 interface NotificationDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   tasks: Task[];
+  reminders?: Reminder[];
   onToggleTask: (id: string) => void;
   onStartFocus: (task: Task) => void;
+  onDeleteReminder?: (id: string) => void;
 }
 
 export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
   isOpen,
   onClose,
   tasks,
+  reminders = [],
   onToggleTask,
-  onStartFocus
+  onStartFocus,
+  onDeleteReminder
 }) => {
   if (!isOpen) return null;
+
+  const [browserPermission, setBrowserPermission] = useState<string>(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
+
+  const requestBrowserPermission = async () => {
+    if ('Notification' in window) {
+      try {
+        const perm = await Notification.requestPermission();
+        setBrowserPermission(perm);
+        if (perm === 'granted') {
+          new Notification('AI LifePilot Notifications Enabled', {
+            body: 'You will receive real-time alerts for scheduled reminders and critical deadlines.'
+          });
+        }
+      } catch (e) {
+        console.error('Notification permission error:', e);
+      }
+    }
+  };
 
   const overdueTasks = tasks.filter((t) => t.is_overdue && t.status !== 'completed');
   const urgentTasks = tasks.filter(
     (t) => !t.is_overdue && t.urgency_level === 'urgent' && t.status !== 'completed'
   );
+  const pendingReminders = reminders.filter((r) => r.status === 'pending');
+
+  const totalAlertCount = overdueTasks.length + urgentTasks.length + pendingReminders.length;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -38,14 +75,14 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
             <div>
               <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 Deadline & Risk Notifications
-                {(overdueTasks.length > 0 || urgentTasks.length > 0) && (
+                {totalAlertCount > 0 && (
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400">
-                    {overdueTasks.length + urgentTasks.length} Alerts
+                    {totalAlertCount} Active
                   </span>
                 )}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Actionable interventions to protect your daily timeline
+                Real-time scheduled alerts & timeline protection
               </p>
             </div>
             <button
@@ -56,20 +93,74 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
             </button>
           </div>
 
+          {/* Browser Permission Banner */}
+          {browserPermission !== 'granted' && browserPermission !== 'unsupported' && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-900/40 flex items-center justify-between gap-3 text-xs text-blue-800 dark:text-blue-300">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>Enable desktop browser notifications for live reminder alerts</span>
+              </div>
+              <button
+                onClick={requestBrowserPermission}
+                className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-semibold text-[11px] hover:bg-blue-700 shrink-0 shadow-2xs"
+              >
+                Enable
+              </button>
+            </div>
+          )}
+
           {/* List */}
           <div className="p-5 overflow-y-auto space-y-4 flex-1">
-            {overdueTasks.length === 0 && urgentTasks.length === 0 ? (
+            {totalAlertCount === 0 ? (
               <div className="text-center py-12 text-slate-400 space-y-2">
                 <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500" />
                 <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  All Clear! No Overdue Tasks
+                  All Clear! No Pending Alerts
                 </div>
                 <p className="text-xs max-w-xs mx-auto">
-                  Your deadlines are under control. Keep up the steady momentum!
+                  Your deadlines and reminders are under control. Steady momentum!
                 </p>
               </div>
             ) : (
               <>
+                {/* Scheduled Reminders Section */}
+                {pendingReminders.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                      <Bell className="w-3.5 h-3.5" />
+                      Scheduled Reminders ({pendingReminders.length})
+                    </div>
+
+                    {pendingReminders.map((rem) => (
+                      <div
+                        key={rem.id}
+                        className="p-3.5 rounded-xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-2"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-xs text-slate-900 dark:text-white">
+                            {rem.title}
+                          </span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 whitespace-nowrap">
+                            {rem.remind_at.slice(11, 16)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+                          <span>Target: {rem.remind_at.replace('T', ' ')}</span>
+                          {onDeleteReminder && (
+                            <button
+                              onClick={() => onDeleteReminder(rem.id)}
+                              className="text-slate-400 hover:text-rose-600 p-1 rounded"
+                              title="Dismiss Reminder"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Overdue Section */}
                 {overdueTasks.length > 0 && (
                   <div className="space-y-3">
@@ -142,23 +233,19 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
                           </span>
                         </div>
 
-                        <div className="text-[11px] text-slate-600 dark:text-slate-400">
-                          Estimated duration: {task.estimated_duration} mins.
-                        </div>
-
                         <div className="flex items-center justify-end gap-2 pt-1">
                           <button
                             onClick={() => onStartFocus(task)}
                             className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-1"
                           >
                             <Clock className="w-3 h-3" />
-                            Sprint ({task.estimated_duration}m)
+                            Start Sprint
                           </button>
                           <button
                             onClick={() => onToggleTask(task.id)}
                             className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200"
                           >
-                            Mark Done
+                            Done
                           </button>
                         </div>
                       </div>

@@ -3,8 +3,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from database import init_db
-from routers import tasks, planner, habits, focus, assistant, analytics, settings, demo
+from database import init_db, get_connection
+from scheduler import start_scheduler, stop_scheduler
+from routers import tasks, planner, habits, focus, assistant, analytics, settings, demo, reminders, external
 
 def load_env_file(filepath: str):
     if os.path.exists(filepath):
@@ -26,8 +27,8 @@ load_env_file(os.path.join(os.path.dirname(__file__), ".env"))
 
 app = FastAPI(
     title="AI LifePilot API",
-    description="Intelligent Daily Life Assistant API - Real-World Production Platform",
-    version="1.0.0"
+    description="Intelligent Daily Life Assistant API - Real-Time AI Productivity Platform",
+    version="2.0.0"
 )
 
 # CORS configuration for development and local production
@@ -39,10 +40,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Startup event to ensure database is created and initialized
+# Startup and shutdown events
 @app.on_event("startup")
 def startup_event():
     init_db()
+    start_scheduler()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    stop_scheduler()
 
 # Include all REST API routers
 app.include_router(tasks.router)
@@ -53,13 +59,41 @@ app.include_router(assistant.router)
 app.include_router(analytics.router)
 app.include_router(settings.router)
 app.include_router(demo.router)
+app.include_router(reminders.router)
+app.include_router(external.router)
 
 @app.get("/api/health")
 def health_check():
+    ai_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not ai_key:
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT gemini_api_key FROM user_settings WHERE id = 1")
+            row = cursor.fetchone()
+            conn.close()
+            if row and row["gemini_api_key"]:
+                ai_key = row["gemini_api_key"].strip()
+        except Exception:
+            pass
+    ai_configured = bool(ai_key)
     return {
         "status": "ok",
         "service": "AI LifePilot Backend",
-        "ai_configured": bool(os.environ.get("GEMINI_API_KEY", "").strip())
+        "version": "2.0.0",
+        "ai_configured": ai_configured,
+        "scheduler_active": True,
+        "supported_tools": [
+            "create_task",
+            "list_tasks",
+            "complete_task",
+            "delete_task",
+            "get_weather",
+            "web_search",
+            "create_reminder",
+            "get_schedule",
+            "get_current_time"
+        ]
     }
 
 # Serve frontend build if dist directory exists

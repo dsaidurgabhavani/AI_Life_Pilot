@@ -305,7 +305,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                   isGeminiConnected ? 'bg-emerald-500' : 'bg-slate-400'
                 }`}
               />
-              {isGeminiConnected ? 'Gemini 1.5 Flash Connected' : 'Deterministic Mode (Key Optional)'}
+              {isGeminiConnected ? 'Gemini 3.1 Flash Lite Connected' : 'Deterministic Mode (Key Optional)'}
             </span>
           </div>
 
