@@ -1,10 +1,17 @@
 services:
   - type: web
     name: ai-lifepilot
-    env: docker
+    runtime: docker
     plan: free
     region: oregon
-    dockerfilePath: Dockerfile
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
     envVars:
+      - key: PORT
+        value: 10000
       - key: GEMINI_API_KEY
         sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.1-flash-lite
+      - key: USER_DEFAULT_TIMEZONE
+        value: Asia/Kolkata

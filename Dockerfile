@@ -1,31 +1,49 @@
-# Stage 1: Build Frontend Assets
+# ========================================================
+# AI LifePilot - Multi-stage Production Dockerfile
+# ========================================================
+
+# Stage 1: Build the React TypeScript frontend
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: Production Python Backend + Static Host
-FROM python:3.11-slim
+# Stage 2: Python 3.11 Backend & Unified Web Service
+FROM python:3.11-slim AS runner
 WORKDIR /app
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=10000 \
+    HOST=0.0.0.0
 
-# Install dependencies
+# Install curl for container health check
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy Backend & Compiled Frontend
+# Copy backend application
 COPY backend/ ./backend/
+COPY .env.example ./.env.example
+
+# Copy compiled frontend static assets from Stage 1
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Expose Port
-EXPOSE 8000
+# Expose web service port
+EXPOSE 10000
 
-# Run Uvicorn
-CMD ["sh", "-c", "uvicorn main:app --app-dir backend --host 0.0.0.0 --port ${PORT}"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://127.0.0.1:${PORT}/api/health || exit 1
+
+# Start FastAPI application binding dynamically to Render's $PORT
+CMD ["sh", "-c", "python -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port ${PORT}"]
